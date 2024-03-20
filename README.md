@@ -29,69 +29,51 @@ timedatectl set-ntp true # 将系统时间与网络时间进行同步
 timedatectl status # 检查服务状态
 ```
 
-更换镜像源
-
-```bash
-vim /etc/pacman.d/mirrorlist
-```
-
-```properties
-# 中国科学技术大学开源镜像站
-Server = https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch 
-# 清华大学开源软件镜像站
-Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch
-# 华为开源镜像站
-Server = https://repo.huaweicloud.com/archlinux/$repo/os/$arch 
-# 兰州大学开源镜像站
-Server = http://mirror.lzu.edu.cn/archlinux/$repo/os/$arch 
-```
-
-
-
 分区 1
 
 ```bash
 lsblk # 显示当前分区情况
+cfdisk /dev/nvme0n1 # 自己分区
 
 # 格式化
-mkfs.ext4 /dev/nvme1n1p3
-mkfs.ext4 /dev/nvme1n1p4
+mkfs.fat -F32 /dev/nvme0n1p1
+mkfs.btrfs -L Rikka /dev/nvme1n1p2
 
-# 创建所需要的文件夹
-mkdir /mnt/boot
+# 挂载分区
+mount -t btrfs -o compress=zstd /dev/nvme0n1p2 /mnt
+
+# 创建根目录家目录子卷
+btrfs subvolume create /mnt/@
+btrfs subvolume create /mnt/@home
+
+# 检查子卷情况
+btrfs subvolume list -p /mnt 
+
+# 解除挂载
+umount /mnt
+
+# 挂载
+mount -t btrfs -o subvol=@,noatime,discard=async,compress=zstd /dev/nvmexn1p2 /mnt
 mkdir /mnt/home
+mount -t btrfs -o subvol=@home,noatime,discard=async,compress=zstd /dev/nvmexn1p2 /mnt/home
+mkdir -p /mnt/boot/efi
+mount /dev/nvme0n1p1 /mnt/boot/efi
 
-# 挂在分区
-mount /dev/nvme1n1p3 /mnt
-mount /dev/nvme1n1p1 /mnt/boot
-mount /dev/nvme1n1p4 /mnt/home
+pacman -Sy archlinux-ketring
+# pacman-key --init
+# pacman-key --populate archlinux
+# pacman-key --refresh-keys
 
-# 
-grub-install --target=x86_64-efi --efi-directory=/boot--bootloader-id=ARCH
+# 安装一些基本的东东
+pacstrap -K /mnt base base-devel linux linux-firmware btrfs-progs dhcpcd iwd vim sudo bash-completion networkmanager
 
-```
-
-安装系统
-
-```bash
-# 通过如下命令使用 pacstrap 脚本安装基础包
-pacstrap /mnt base base-devel linux linux-firmware
-```
-
-生产Fstab
-
-`fstab` 用来定义磁盘分区。它是 Linux 系统中重要的文件之一。使用 `genfstab` 自动根据当前挂载情况生成并写入 `fstab` 文件：
-
-```bash
+# 做grub
 genfstab -U /mnt > /mnt/etc/fstab
-cat /mnt/etc/fstab # 复查一下
-```
 
-![image-20221023163700242](MD图片/ArchLInux使用.assets/image-20221023163700242.png)
+# 看看发育正不正常
+cat /mnt/etc/fstab
 
-把环境切换到新系统的/mnt 下
-
-```bash
+# 切到chroot开始访问
 arch-chroot /mnt
 ```
 
@@ -144,7 +126,6 @@ passwd root
 
 ```bash
 # 通过以下命令安装对应芯片制造商的微码：
-pacman -S intel-ucode # Intel
 pacman -S amd-ucode # AMD
 ```
 
@@ -152,18 +133,14 @@ pacman -S amd-ucode # AMD
 
 ```bash
 # 1. 安装相应的包：
-pacman -S grub efibootmgr os-prober
+pacman -S grub efibootmgr
 # 命令参数说明：
 # 	-S 选项后指定要通过 pacman 包管理器安装的包：
 # 	grub —— 启动引导器
 # 	efibootmgr —— efibootmgr 被 grub 脚本用来将启动项写入 NVRAM
-# 	os-prober —— 为了能够引导 win10，需要安装 os-prober 以检测到它
 
 # 2. 安装 GRUB 到 EFI 分区：
-grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=ARCH
-# 命令参数说明：
-# 	--efi-directory=/boot/efi —— 将 grubx64.efi 安装到之前的指定位置（EFI 分区）
-# 	--bootloader-id=ARCH —— 取名为 ARCH
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Arch
 
 # 3. 接下来使用 vim 编辑 /etc/default/grub 文件：
 vim /etc/default/grub
